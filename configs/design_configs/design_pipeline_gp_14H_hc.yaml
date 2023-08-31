@@ -11,11 +11,11 @@ hydra:
 model_cfg:
     _target_: src.test_regression.GPModelPrediction
     feat_cfg:
-        model_config_file: <Full Path>/biotransfer/pretrained_models/bert_configs/config.json
-        feat_path: <Full Path>/biotransfer/pretrained_models/pfam.ckpt # pretrained lanaguge model checkpoint
+        model_config_file: /data/users/zx243/Documents/biotransfer/pretrained_models/bert_configs/config.json
+        feat_path: /data/users/zx243/Documents/biotransfer/pretrained_models/pfam.ckpt # pretrained lanaguge model checkpoint
         strict_reload: False
-    pca_model_path: <Full Path>/pca_model.sav # saved pca model for dimensionality reduction
-    gp_state_dict_path: <Full Path>/GP_model_state_dict.pth # pretrained gp model
+    pca_model_path: /data/users/zx243/Documents/biotransfer/pca_model.sav # saved pca model for dimensionality reduction
+    gp_state_dict_path: /data/users/zx243/Documents/biotransfer/GP_model_state_dict.pth # pretrained gp model
     batch_size: 64
 
 seed_topK: 0 # select the top sequence to initialize the design (seed_topK can be up to 10)
@@ -24,4 +24,4 @@ cdr_region: Null # all variable regions or [0] for cdr1, [1] for cdr 2 and [2] f
 dataloader_cfg:
     _target_: src.datasets.CovidDesignDataset.CovidDataset
     chain: "14H"
-    data_path: <Full Path>/biotransfer/data/covid/ # used to extract top k sequences to be used as seeds and initialize the GP model
+    data_path: /data/users/zx243/Documents/biotransfer/data/covid/ # used to extract top k sequences to be used as seeds and initialize the GP model

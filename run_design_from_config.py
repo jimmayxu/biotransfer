@@ -3,13 +3,15 @@
 
 """Run design with config file"""
 
+
+
 import hydra
 from src.design_pipeline import design_pipeline
 import hydra.experimental
 
-#config_dir = '/home/li25662/AIforGreatGood/biotransfer/configs/design_configs'
-#hydra.initialize_config_dir(config_dir)
-#cfg = hydra.compose("design_pipeline_gp_14H_hc.yaml")
+config_dir = '/data/users/zx243/Documents/biotransfer/configs/design_configs'
+hydra.initialize_config_dir(config_dir)
+cfg = hydra.compose("design_pipeline_gp_14H_hc.yaml")
 
 @hydra.main()
 def design_from_config(cfg):

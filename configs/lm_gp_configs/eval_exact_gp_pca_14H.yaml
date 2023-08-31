@@ -3,8 +3,8 @@
 
 experiment_name: "eval_gp_14H"
 strict_reload: True
-reload_state_dict_path: <Path to GP model>/GP_model_state_dict.pth
-pca_model_path: <Path to PCA model>/pca_model.sav
+reload_state_dict_path: /data/users/zx243/Documents/biotransfer/GP_model_state_dict.pth
+pca_model_path: /data/users/zx243/Documents/biotransfer/pca_model.sav
 
 
 hydra:

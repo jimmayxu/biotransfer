@@ -1,8 +1,8 @@
 
 name: antibody_design
 channels:
-  - pytorch
   - conda-forge
+  - pytorch
   - defaults
 dependencies:
   # Required Dependencies
