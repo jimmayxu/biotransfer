@@ -4,6 +4,8 @@ channels:
   - conda-forge
   - pytorch
   - defaults
+  - rapidsai
+  - nvidia
 dependencies:
   # Required Dependencies
   - python=3.10.*
@@ -15,6 +17,8 @@ dependencies:
   - pandas
   - tqdm
   - pip
+  - rapids
+  - gpytorch>=1.5.0
   - pip:
     - tape-proteins==0.5
     - gpytorch==1.4.1

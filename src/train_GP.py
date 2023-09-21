@@ -2,6 +2,7 @@
 # Subject to FAR 52.227-11 – Patent Rights – Ownership by the Contractor (May 2014).
 
 """Training classes and functions"""
+import os
 from importlib import import_module
 import hydra
 from torch.utils.data import DataLoader
@@ -13,12 +14,13 @@ from sklearn.decomposition import PCA, IncrementalPCA, KernelPCA
 import joblib
 import time
 import numpy as np
+from cuml import PCA as cumlPCA
 
 #from dask_cuda import LocalCUDACluster
 #from dask.distributed import Client
 
 
-def validation(model, val_dataloader, feat_model, mll, variable_regions=None, pca_model=None):
+def validation(model, val_dataloader, feat_model, mll, variable_regions=None, pca_model=None, save_name=None):
     """Evaluate model on validation set
 
     Args:
@@ -34,6 +36,7 @@ def validation(model, val_dataloader, feat_model, mll, variable_regions=None, pc
     """
     means = torch.tensor([0.])
     gt = torch.tensor([0.])
+    Val_X = torch.tensor([])
     val_loss = []
     with torch.no_grad():
         for batch in tqdm.tqdm(val_dataloader):
@@ -42,30 +45,39 @@ def validation(model, val_dataloader, feat_model, mll, variable_regions=None, pc
                 data, mask, target = batch["input_ids"].cuda(), batch["input_masks"].cuda(), batch["targets"].cuda()
             else:
                 data, mask, target = batch["input_ids"], batch["input_masks"], batch["targets"]
-            val_X = feat_model(data, mask, variable_regions=variable_regions)
+            val_X_ = feat_model(data, mask, variable_regions=variable_regions)
             if pca_model is not None:
-                if torch.cuda.is_available():
-                    val_X = val_X.cpu()
-                val_X = torch.from_numpy(pca_model.transform(val_X))
-                if torch.cuda.is_available():
-                    val_X = val_X.cuda()
+                val_X = torch.as_tensor(pca_model.transform(val_X_.detach()))
+                val_X = val_X.cuda()
             output = model(val_X)  
             means = torch.cat([means, output.mean.cpu()])
             gt = torch.cat([gt, target.squeeze(-1).cpu()])
             val_loss.append(-mll(output, target.squeeze(-1)))
+
+            Val_X = torch.cat((Val_X, val_X.cpu()), 0)
+
     gt = gt[1:]
     means = means[1:]
-    print('Test MAE: {}'.format(torch.mean(torch.abs(means - gt))))
+    if save_name is not None:
+        np.savetxt('data_pca/%s_X.txt' % save_name, Val_X)
+        np.savetxt('data_pca/%s_y.txt' % save_name, gt)
+    
+    MAE = torch.mean(torch.abs(means - gt))
+    print('Test MAE: {}'.format(MAE))
     gt = gt.detach().cpu().numpy()
     means = means.detach().cpu().numpy()
-    print('Test Pearson: {}'.format(pearsonr(gt, means)[0]))
-    return sum(val_loss)/len(val_loss)
+    PCC = pearsonr(gt, means)[0]
+    print('Test Pearson: {}'.format(PCC))
+    mean_loss = sum(val_loss)/len(val_loss)
+    return mean_loss.cpu().numpy(), MAE.numpy(), PCC
 
-def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None, val_set_cfg=None, val_dataloader_cfg=None, logger_cfgs=None,
-         callback_cfgs=None, checkpoint_callback_cfg=None, seed=0, reload_checkpoint_path=None, reload_state_dict_path=None,
-         strict_reload=True,
-         experiment_name=None, 
-         nodes=None):
+
+def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
+             val_set_cfg=None, val_dataloader_cfg=None, logger_cfgs=None,
+             eval_set_cfg=None, eval_dataloader_cfg=None, callback_cfgs=None, checkpoint_callback_cfg=None, seed=0, reload_checkpoint_path=None, reload_state_dict_path=None,
+             strict_reload=True,
+             experiment_name=None,
+             nodes=None):
     """
     Train using given configurations.
 
@@ -87,7 +99,10 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None, val_
           exactly match the reloaded weight architecture
         experiment_name: Name of this experiment
         nodes: Number of nodes
-    """ 
+    """
+    os.makedirs('data_pca/%s/' % train_set_cfg.chain, exist_ok=True)
+    os.makedirs('results/%s/' % train_set_cfg.chain, exist_ok=True)
+
     # Load training data handlers
     train_set = hydra.utils.instantiate(train_set_cfg)
     print("TRAIN SET SIZE: {}".format(len(train_set)))
@@ -95,15 +110,7 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None, val_
         train_dataloader = DataLoader(dataset=train_set, collate_fn=train_set.collate_fn, **train_dataloader_cfg)
     else:
         train_dataloader = DataLoader(dataset=train_set, **train_dataloader_cfg)
-    
-    # Load validation data handlers
-    val_dataloader=None
-    if val_set_cfg is not None:
-        val_set = hydra.utils.instantiate(val_set_cfg)
-        if hasattr(val_set, "collate_fn"):
-            val_dataloader = DataLoader(dataset=val_set, collate_fn=val_set.collate_fn, **val_dataloader_cfg)
-        else:
-            val_dataloader = DataLoader(dataset=val_set, **val_dataloader_cfg)
+
     # Load feature extractor (pretrained language model)
     target_args = feat_cfg._target_.split(".")
     module_path = ".".join(target_args[:-1])
@@ -161,34 +168,34 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None, val_
         print(train_X.size())
     else:
         pca_model = None
-    print("PCA running \n--- %.3f minutes ---" % ((time.time() - start_time)/60))
+    
     """
-    torch.cuda.set_device(3)
-    train_X__ = np.loadtxt('results/train_X.txt')
-    train_X_ = np.loadtxt('results/train_X1000.txt')
-    train_y_ = np.loadtxt('results/train_y.txt')
-
-    train_X = torch.from_numpy(train_X_[:15000]).cuda()
-    train_y = torch.from_numpy(train_y_[:15000]).cuda()
-
-    train_X = torch.from_numpy(train_X__[:, :12000]).cuda()
-    train_y = torch.from_numpy(train_y_).cuda()
 
 
     torch.cuda.empty_cache()
-    from cuml import PCA as cumlPCA
+    start_time = time.time()
     if pca_dim is not None: # perform pca
         if torch.cuda.is_available():
-            pca_cuml = cumlPCA(n_components=pca_dim, svd_solver='auto')
-            train_X = pca_cuml.fit_transform(train_X)
+            pca_model = cumlPCA(n_components=pca_dim, svd_solver='auto').fit(train_X)
+            train_X = pca_model.transform(train_X)
+            train_X = torch.as_tensor(train_X).cuda()
         else:
             pca_model = KernelPCA(pca_dim, kernel='linear', copy_X=False).fit(train_X)
-            train_X = torch.from_numpy(pca_model.transform(train_X))
+            train_X = torch.as_tensor(pca_model.transform(train_X))
         
     else:
         pca_model = None
-    print('save train_X after PCA')
-    np.savetxt('results/train_X_pca.txt', train_X.cpu().numpy())
+    print("PCA running \n--- %.3f minutes ---" % ((time.time() - start_time) / 60))
+
+    np.savetxt('data_pca/%s/train_X.txt' %train_set_cfg.chain, train_X.cpu().numpy())
+    np.savetxt('data_pca/%s/train_y.txt' % train_set_cfg.chain, train_y.cpu().numpy())
+    """
+    train_X_ = np.loadtxt('results/train_X_pca.txt')
+    train_X = torch.as_tensor(train_X_).cuda()
+    train_y_ = np.loadtxt('results/train_y.txt')
+    train_y = torch.as_tensor(train_y_).cuda()
+    """
+
 
     # load GP model
     target_args = model_cfg._target_.split(".")
@@ -229,17 +236,42 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None, val_
         epoch_iter.set_postfix(loss=loss.item())
 
     # ------Validation------
+
+    # Load validation data handlers
+    if val_set_cfg is not None:
+        val_set = hydra.utils.instantiate(val_set_cfg)
+        if hasattr(val_set, "collate_fn"):
+            val_dataloader = DataLoader(dataset=val_set, collate_fn=val_set.collate_fn, **val_dataloader_cfg)
+        else:
+            val_dataloader = DataLoader(dataset=val_set, **val_dataloader_cfg)
     if val_set_cfg is not None:
         gp_model.eval()
         likelihood.eval()
-        val_loss = validation(gp_model, val_dataloader, feat_model, mll, variable_regions=variable_regions, pca_model=pca_model)
+        val_loss, val_MAE, val_PCC = validation(gp_model, val_dataloader, feat_model, mll, variable_regions=variable_regions, pca_model=pca_model, save_name='%s/valid' %val_set_cfg.chain)
         print('validation loss:', val_loss)
+        print('validation MAE:', val_MAE)
+        print('validation PCC:', val_PCC)
     
     # save model
-    torch.save(gp_model.state_dict(), 'GP_model_state_dict.pth')
+    torch.save(gp_model.state_dict(), 'results/%s/GP_model_state_dict.pth' %train_set_cfg.chain)
     if pca_dim is not None: # pca is used and save the pca model
-        joblib.dump(pca_model, 'pca_model.sav')
-    return val_loss.item()
+        joblib.dump(pca_model, 'results/%s/pca_model.sav')
+
+
+    # ------evaluation------
+    eval_set = hydra.utils.instantiate(eval_set_cfg)
+    if hasattr(eval_set, "collate_fn"):
+        eval_dataloader = DataLoader(dataset=eval_set, collate_fn=eval_set.collate_fn, **eval_dataloader_cfg)
+    else:
+        eval_dataloader = DataLoader(dataset=eval_set, **eval_dataloader_cfg)
+
+    gp_model.eval()
+    likelihood.eval()
+    eval_loss, eval_MAE, eval_PCC = validation(gp_model, eval_dataloader, feat_model, mll, variable_regions=variable_regions, pca_model=pca_model, save_name='%s/test' %eval_set_cfg.chain)
+    print('evaluation loss:', eval_loss)
+    print('evaluation MAE:', eval_MAE)
+    print('evaluation PCC:', eval_PCC)
+
 
 """
  if pca_dim is not None: # perform pca
