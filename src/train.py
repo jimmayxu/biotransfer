@@ -20,9 +20,9 @@ import torch
 
 def train(train_set_cfg, train_dataloader_cfg, trainer_cfg, model_cfg=None, val_set_cfg=None, val_dataloader_cfg=None, logger_cfgs=None,
          callback_cfgs=None, checkpoint_callback_cfg=None, seed=0, reload_checkpoint_path=None, reload_state_dict_path=None,
-         strict_reload=True,
+         strict_reload=True, feat_cfg=None,
          experiment_name=None, 
-         nodes=None):
+         nodes=None, **kwag):
     """Train using given configurations.
 
     Args:
@@ -115,7 +115,7 @@ def train(train_set_cfg, train_dataloader_cfg, trainer_cfg, model_cfg=None, val_
     # Fit
     start_time = time.time()
     #breakpoint()
-    trainer.fit(model, train_dataloader=train_dataloader, val_dataloaders=val_dataloader)
+    trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
 
     print("Elapsed training time: {}".format(time.time() - start_time))
 

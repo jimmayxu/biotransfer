@@ -4,6 +4,9 @@
 """Hook for training GP with config file"""
 """
 python train_GP_from_config.py -cd configs/lm_gp_configs/ -cn train_exact_gp_pca_14H.yaml
+python train_GP_from_config.py -cd configs/lm_gp_configs/ -cn train_exact_gp_pca_14L.yaml
+python train_GP_from_config.py -cd configs/lm_gp_configs/ -cn train_exact_gp_pca_91H.yaml
+python train_GP_from_config.py -cd configs/lm_gp_configs/ -cn train_exact_gp_pca_95L.yaml
 """
 import hydra
 from random import randint
@@ -12,9 +15,9 @@ import os
 import torch
 
 
-config_dir = '/mnt/jimmyxu/nfs_share2/Documents/biotransfer/configs/lm_gp_configs'
-hydra.initialize_config_dir(config_dir)
-cfg = hydra.compose("train_exact_gp_pca_14H.yaml")
+#config_dir = '/mnt/jimmyxu/nfs_share2/Documents/biotransfer/configs/lm_gp_configs'
+#hydra.initialize_config_dir(config_dir)
+#cfg = hydra.compose("train_exact_gp_pca_14H.yaml")
 
 
 @hydra.main()
@@ -22,7 +25,7 @@ def train_from_config(cfg):
     return train_gp(**cfg)
 
 if __name__ == "__main__":
-    torch.cuda.set_device(1)
-    train_from_config(cfg)
-    #train_from_config()
+    torch.cuda.set_device(2)
+    #train_from_config(cfg)
+    train_from_config()
 

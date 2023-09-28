@@ -8,8 +8,9 @@
 import hydra
 from src.design_pipeline import design_pipeline
 import hydra.experimental
+import torch
 
-config_dir = '/data/users/zx243/Documents/biotransfer/configs/design_configs'
+config_dir = '/mnt/jimmyxu/nfs_share2/Documents/biotransfer/configs/design_configs'
 hydra.initialize_config_dir(config_dir)
 cfg = hydra.compose("design_pipeline_gp_14H_hc.yaml")
 
@@ -18,4 +19,6 @@ def design_from_config(cfg):
     return design_pipeline(**cfg)
 
 if __name__ == "__main__":
-    design_from_config()
+    torch.cuda.set_device(2)
+    design_from_config(cfg)
+    #design_from_config()

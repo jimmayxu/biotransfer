@@ -13,7 +13,7 @@ from scipy.stats import pearsonr
 from sklearn.decomposition import PCA, IncrementalPCA, KernelPCA
 import joblib
 
-def evaluation(model, val_dataloader, feat_model, mll, variable_regions=None, pca_model=None, feat_concat=False):
+def evaluation(model, val_dataloader, feat_model, mll, variable_regions=None, pca_model=None):
     """Perform model evaluation
 
     Args:
@@ -35,14 +35,11 @@ def evaluation(model, val_dataloader, feat_model, mll, variable_regions=None, pc
             # extract features
             if torch.cuda.is_available():
                 data, mask, target = batch["input_ids"].cuda(), batch["input_masks"].cuda(), batch["targets"].cuda()
-            val_X = feat_model(data, mask, variable_regions=variable_regions, feat_concat=feat_concat)
+            val_X = feat_model(data, mask, variable_regions=variable_regions)
             if pca_model is not None:
-                if torch.cuda.is_available():
-                    val_X = val_X.cpu()
-                val_X = torch.from_numpy(pca_model.transform(val_X))
-                if torch.cuda.is_available():
-                    val_X = val_X.cuda()
-            output = model(val_X)  
+                val_X = torch.as_tensor(pca_model.transform(val_X.detach()))
+                val_X = val_X.cuda()
+            output = model(val_X)
             means = torch.cat([means, output.mean.cpu()])
             gt = torch.cat([gt, target.squeeze(-1).cpu()])
             val_loss.append(-mll(output, target.squeeze(-1)))
@@ -103,7 +100,7 @@ strict_reload=True,eval_function_cfg=None,experiment_name=None, nodes=None):
     module_path = ".".join(target_args[:-1])
     module_name = target_args[-1]
     module = getattr(import_module(module_path), module_name)
-    feat_model = module.load_from_checkpoint(feat_cfg.feat_path, model_config_file=feat_cfg.model_config_file, strict=feat_cfg.strict_reload)
+    feat_model = module.load_from_checkpoint(feat_cfg.feat_path, model_config_file=feat_cfg.model_config_file, strict=feat_cfg.strict_reload, map_location=torch.device('cuda', torch.cuda.current_device()))
     # pca dimensionality reduction
     pca_dim = feat_cfg.pca_dim
     assert isinstance(pca_dim, int) or (pca_dim is None), 'pca_dim is either None or an positive integer'
@@ -114,12 +111,13 @@ strict_reload=True,eval_function_cfg=None,experiment_name=None, nodes=None):
         variable_regions = train_set.get_variable_regions()
         print('Variable regions:', variable_regions)
     # feature concatenation
+    """
     feat_concat = feat_cfg.feat_concat
     if feat_concat: 
         assert pca_dim is not None, 'Please specify an integer value for pca_dim, or set feat_concat to False.'
     if variable_regions is None:
         assert not feat_concat, 'If no variable regions is specified, then features cannot be concatenated. Either set variable_regions=True or set feat_concat=False'
-
+    """
     # prepare labeled data
     feat_model.eval()
     if torch.cuda.is_available():
@@ -131,7 +129,7 @@ strict_reload=True,eval_function_cfg=None,experiment_name=None, nodes=None):
             if torch.cuda.is_available():
                 data, mask, target = batch["input_ids"].cuda(), batch["input_masks"].cuda(), batch["targets"].cuda()
             train_y = torch.cat((train_y, target.squeeze(-1)), 0)
-            output = feat_model(data, mask, variable_regions=variable_regions, feat_concat=feat_concat)
+            output = feat_model(data, mask, variable_regions=variable_regions)
             train_X = torch.cat((train_X, output), 0)
             train_X_size = len(train_X)
         if val_set_cfg is not None:
@@ -139,23 +137,22 @@ strict_reload=True,eval_function_cfg=None,experiment_name=None, nodes=None):
                 if torch.cuda.is_available():
                     data, mask, target = batch["input_ids"].cuda(), batch["input_masks"].cuda(), batch["targets"].cuda()
                 train_y = torch.cat((train_y, target.squeeze(-1)), 0)
-                output = feat_model(data, mask, variable_regions=variable_regions, feat_concat=feat_concat)
+                output = feat_model(data, mask, variable_regions=variable_regions)
                 train_X = torch.cat((train_X, output), 0)
     print(train_X.size())
     print(train_y.size())
 
     if pca_dim is not None: # perform pca
-        if torch.cuda.is_available():
-            train_X = train_X.cpu()
         print('load pca model')
         pca_model = joblib.load(pca_model_path)
         #pca_model = KernelPCA(pca_dim, kernel='linear', copy_X=False).fit(train_X)
-        train_X = torch.from_numpy(pca_model.transform(train_X))
-        if torch.cuda.is_available():
-            train_X = train_X.cuda()
+        train_X = torch.as_tensor(pca_model.transform(train_X.detach()))
         print(train_X.size())
     else:
         pca_model = None
+
+
+
 
     # load GP model
     target_args = model_cfg._target_.split(".")
@@ -176,10 +173,13 @@ strict_reload=True,eval_function_cfg=None,experiment_name=None, nodes=None):
     print(gp_model)
 
     # ------evaluation------
+    torch.cuda.empty_cache()
     mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, gp_model)
     gp_model.eval()
     likelihood.eval()
-    eval_loss, preds, gt = evaluation(gp_model, eval_dataloader, feat_model, mll, variable_regions=variable_regions, pca_model=pca_model, feat_concat=feat_concat)
+    eval_loss, preds, gt = evaluation(gp_model, eval_dataloader, feat_model, mll, variable_regions=variable_regions, pca_model=pca_model)
+    eval_loss, preds, gt = evaluation(gp_model, train_dataloader, feat_model, mll, variable_regions=variable_regions,
+                                      pca_model=pca_model)
     print('validation loss:', eval_loss)
 
     # eval (if evaluation function is provided)

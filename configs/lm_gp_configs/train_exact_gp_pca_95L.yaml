@@ -1,0 +1,64 @@
+#defaults:
+    #- override hydra/launcher: submitit_slurm
+
+experiment_name: "train_gp_95L"
+hydra:
+    run:
+        dir: ./results/${experiment_name}
+############
+
+model_cfg:
+    _target_: src.models.ExactGP.GPRegressionModel
+    lr: 0.001
+    num_epochs: 1000
+    inducing_points: null
+
+feat_cfg:
+    _target_: src.models.feat_extraction.FeatExtractor
+    model_config_file: /mnt/jimmyxu/nfs_share2/Documents/biotransfer/pretrained_models/bert_configs/config.json
+    feat_path: /mnt/jimmyxu/nfs_share2/Documents/biotransfer/pretrained_models/pfam.ckpt # Full path to the pretrained langauge model checkpoint
+    strict_reload: False
+    variable_regions: True
+    pca_dim: 1024
+
+train_set_cfg:
+    _target_: src.datasets.CovidDataset
+    data_path: /mnt/jimmyxu/nfs_share2/Documents/biotransfer/example_data/covid/
+    split: train
+    chain: 95L
+    average_replicates: True
+    add_static_ends: True
+    correction: replicate
+    filter_nan: median
+
+train_dataloader_cfg:
+    batch_size: 32
+    shuffle: True
+
+val_set_cfg:
+    _target_: src.datasets.CovidDataset
+    data_path: /mnt/jimmyxu/nfs_share2/Documents/biotransfer/example_data/covid/
+    split: valid
+    chain: 95L
+    average_replicates: True
+    add_static_ends: True
+    correction: replicate
+    filter_nan: median
+    
+val_dataloader_cfg:
+    batch_size: 32
+
+eval_set_cfg:
+    _target_: src.datasets.CovidDataset
+    data_path: /mnt/jimmyxu/nfs_share2/Documents/biotransfer/example_data/covid/
+    split: test
+    chain: 95L
+    average_replicates: True
+    add_static_ends: True
+    correction: replicate
+    filter_nan: median
+
+eval_dataloader_cfg:
+    batch_size: 32
+    shuffle: True
+

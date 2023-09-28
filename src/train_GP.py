@@ -5,16 +5,17 @@
 import os
 from importlib import import_module
 import hydra
+import pandas as pd
 from torch.utils.data import DataLoader
 import torch
 import tqdm
 import gpytorch
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr, spearmanr
 from sklearn.decomposition import PCA, IncrementalPCA, KernelPCA
 import joblib
 import time
 import numpy as np
-from cuml import PCA as cumlPCA
+#from cuml import PCA as cumlPCA
 
 #from dask_cuda import LocalCUDACluster
 #from dask.distributed import Client
@@ -45,9 +46,10 @@ def validation(model, val_dataloader, feat_model, mll, variable_regions=None, pc
                 data, mask, target = batch["input_ids"].cuda(), batch["input_masks"].cuda(), batch["targets"].cuda()
             else:
                 data, mask, target = batch["input_ids"], batch["input_masks"], batch["targets"]
-            val_X_ = feat_model(data, mask, variable_regions=variable_regions)
+            val_X = feat_model(data, mask, variable_regions=variable_regions)
             if pca_model is not None:
-                val_X = torch.as_tensor(pca_model.transform(val_X_.detach()))
+                val_X = val_X.cpu()
+                val_X = torch.as_tensor(pca_model.transform(val_X.detach()))
                 val_X = val_X.cuda()
             output = model(val_X)  
             means = torch.cat([means, output.mean.cpu()])
@@ -63,13 +65,12 @@ def validation(model, val_dataloader, feat_model, mll, variable_regions=None, pc
         np.savetxt('data_pca/%s_y.txt' % save_name, gt)
     
     MAE = torch.mean(torch.abs(means - gt))
-    print('Test MAE: {}'.format(MAE))
     gt = gt.detach().cpu().numpy()
     means = means.detach().cpu().numpy()
     PCC = pearsonr(gt, means)[0]
-    print('Test Pearson: {}'.format(PCC))
     mean_loss = sum(val_loss)/len(val_loss)
-    return mean_loss.cpu().numpy(), MAE.numpy(), PCC
+    SPEAR = spearmanr(gt, means)[0]
+    return mean_loss.cpu().numpy().item(), MAE.numpy().item(), PCC, SPEAR
 
 
 def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
@@ -100,8 +101,7 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
         experiment_name: Name of this experiment
         nodes: Number of nodes
     """
-    os.makedirs('data_pca/%s/' % train_set_cfg.chain, exist_ok=True)
-    os.makedirs('results/%s/' % train_set_cfg.chain, exist_ok=True)
+    os.makedirs('data_pca', exist_ok=True)
 
     # Load training data handlers
     train_set = hydra.utils.instantiate(train_set_cfg)
@@ -156,7 +156,7 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
 
     print(train_X.size())
     print(train_y.size())
-    """
+    torch.cuda.empty_cache()
     start_time = time.time()
     if pca_dim is not None: # perform pca
         if torch.cuda.is_available():
@@ -168,10 +168,8 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
         print(train_X.size())
     else:
         pca_model = None
-    
+
     """
-
-
     torch.cuda.empty_cache()
     start_time = time.time()
     if pca_dim is not None: # perform pca
@@ -185,16 +183,11 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
         
     else:
         pca_model = None
+    """
     print("PCA running \n--- %.3f minutes ---" % ((time.time() - start_time) / 60))
 
-    np.savetxt('data_pca/%s/train_X.txt' %train_set_cfg.chain, train_X.cpu().numpy())
-    np.savetxt('data_pca/%s/train_y.txt' % train_set_cfg.chain, train_y.cpu().numpy())
-    """
-    train_X_ = np.loadtxt('results/train_X_pca.txt')
-    train_X = torch.as_tensor(train_X_).cuda()
-    train_y_ = np.loadtxt('results/train_y.txt')
-    train_y = torch.as_tensor(train_y_).cuda()
-    """
+    np.savetxt('data_pca/train_X.txt', train_X.cpu().numpy())
+    np.savetxt('data_pca/train_y.txt', train_y.cpu().numpy())
 
 
     # load GP model
@@ -235,64 +228,45 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
         optimizer.step()
         epoch_iter.set_postfix(loss=loss.item())
 
-    # ------Validation------
-
-    # Load validation data handlers
-    if val_set_cfg is not None:
-        val_set = hydra.utils.instantiate(val_set_cfg)
-        if hasattr(val_set, "collate_fn"):
-            val_dataloader = DataLoader(dataset=val_set, collate_fn=val_set.collate_fn, **val_dataloader_cfg)
-        else:
-            val_dataloader = DataLoader(dataset=val_set, **val_dataloader_cfg)
-    if val_set_cfg is not None:
-        gp_model.eval()
-        likelihood.eval()
-        val_loss, val_MAE, val_PCC = validation(gp_model, val_dataloader, feat_model, mll, variable_regions=variable_regions, pca_model=pca_model, save_name='%s/valid' %val_set_cfg.chain)
-        print('validation loss:', val_loss)
-        print('validation MAE:', val_MAE)
-        print('validation PCC:', val_PCC)
-    
     # save model
-    torch.save(gp_model.state_dict(), 'results/%s/GP_model_state_dict.pth' %train_set_cfg.chain)
-    if pca_dim is not None: # pca is used and save the pca model
-        joblib.dump(pca_model, 'results/%s/pca_model.sav')
+    torch.save(gp_model.state_dict(), 'GP_model_state_dict.pth')
+    if pca_dim is not None:  # pca is used and save the pca model
+        joblib.dump(pca_model, 'pca_model.sav')
+
+    # ------Validation------
+    torch.cuda.empty_cache()
+    # Load validation data handlers
+    val_set = hydra.utils.instantiate(val_set_cfg)
+    if hasattr(val_set, "collate_fn"):
+        val_dataloader = DataLoader(dataset=val_set, collate_fn=val_set.collate_fn, **val_dataloader_cfg)
+    else:
+        val_dataloader = DataLoader(dataset=val_set, **val_dataloader_cfg)
+    gp_model.eval()
+    likelihood.eval()
+    val_loss, val_MAE, val_PCC, val_SPEAR = validation(gp_model, val_dataloader, feat_model, mll,
+                                            variable_regions=variable_regions, pca_model=pca_model, save_name='valid')
+    print('validation loss:', val_loss)
+    print('validation MAE:', val_MAE)
+    print('validation PCC:', val_PCC)
+    print('validation SPEAR:', val_SPEAR)
 
 
     # ------evaluation------
+    torch.cuda.empty_cache()
+    # Load evaluation data handlers
     eval_set = hydra.utils.instantiate(eval_set_cfg)
     if hasattr(eval_set, "collate_fn"):
         eval_dataloader = DataLoader(dataset=eval_set, collate_fn=eval_set.collate_fn, **eval_dataloader_cfg)
     else:
         eval_dataloader = DataLoader(dataset=eval_set, **eval_dataloader_cfg)
-
     gp_model.eval()
     likelihood.eval()
-    eval_loss, eval_MAE, eval_PCC = validation(gp_model, eval_dataloader, feat_model, mll, variable_regions=variable_regions, pca_model=pca_model, save_name='%s/test' %eval_set_cfg.chain)
+    eval_loss, eval_MAE, eval_PCC, eval_SPEAR = validation(gp_model, eval_dataloader, feat_model, mll,
+                                               variable_regions=variable_regions, pca_model=pca_model, save_name='test')
     print('evaluation loss:', eval_loss)
     print('evaluation MAE:', eval_MAE)
     print('evaluation PCC:', eval_PCC)
-
-
-"""
- if pca_dim is not None: # perform pca
-        if torch.cuda.is_available():
-            cluster = LocalCUDACluster(protocol="ucx",
-                           enable_tcp_over_ucx=True,
-                           enable_nvlink=True,
-                           enable_infiniband=False)
-            client = Client(cluster)
-            pca_cuml = cumlPCA(n_components=pca_dim, svd_solver='auto')
-            client.submit(pca_cuml.fit_transform)
-            data = client.scatter(train_X.cpu().numpy(), broadcast=True)
-            client.run(pca_cuml.fit_transform(data)
-            train_X = client.map(lambda data, model: pca_cuml.fit_transform(data), data, pure=False)
-            train_X = client.gather(train_X)
-            train_X = train_X.cuda()
-        else:
-            pca_model = KernelPCA(pca_dim, kernel='linear', copy_X=False).fit(train_X)
-            train_X = torch.from_numpy(pca_model.transform(train_X))
-        
-    else:
-        pca_model = None
-    
-"""
+    print('validation SPEAR:', eval_SPEAR)
+    save_results = {'evaluation_loss': eval_loss, 'evaluation_MAE': eval_MAE, 'evaluation_PCC': eval_PCC, 'validation_loss': val_loss, 'validation_MAE': val_MAE, 'validation_PCC': val_PCC}
+    pd.Series(save_results).to_csv('performance.csv')
+    print('saved performance metrices')

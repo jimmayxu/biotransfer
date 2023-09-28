@@ -1,19 +1,28 @@
-import torch
-torch.cuda.set_device(3)
-from cuml import PCA as IncrementalPCA
-
-torch.cuda.is_available()
+import os
 import numpy as np
-train_y = np.loadtxt('results/train_y.txt')
-train_X = np.loadtxt('results/train_X.txt')
+import umap
+data_path = 'results'
+data_folder = 'train_gp_91H'
+import seaborn as sns
 
-train_X_small = train_X[:, :1000]
-np.savetxt('results/train_X1000.txt', train_X_small)
-pca_dim = 1000
-pca_cuml = IncrementalPCA(n_components=pca_dim, svd_solver='auto')
-train_X_pca = pca_cuml.fit_transform(train_X)
-torch.cuda.empty_cache()
+import matplotlib.pyplot as plt
 
-import torch
-train_y = torch.from_numpy(train_y)
+train_y = np.loadtxt('%s/%s/data_pca/train_y.txt' %(data_path, data_folder))
+train_X = np.loadtxt('%s/%s/data_pca/train_X.txt' %(data_path, data_folder))
 
+train_X = np.loadtxt('data_pca/train_X.txt')
+train_y = np.loadtxt('data_pca/train_y.txt')
+
+sns.set(context='notebook', style='white', rc={'figure.figsize':(14,10)})
+
+trans = umap.UMAP(n_neighbors=5, random_state=42).fit(train_X)
+plt.scatter(trans.embedding_[:, 0], trans.embedding_[:, 1], s= 5, c=train_y, cmap='Spectral')
+plt.show()
+
+
+from sklearn.manifold import TSNE
+
+X_embedded = TSNE(n_components=2, learning_rate='auto',
+                  init='random', perplexity=3).fit_transform(train_X)
+plt.scatter(X_embedded[:, 0], X_embedded[:, 1], s= 5, c=train_y, cmap='Spectral')
+plt.show()

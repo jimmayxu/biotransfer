@@ -1,21 +1,21 @@
 defaults:
     - explorer_cfg: HillClimb
 
-experiment_name: GP_HC
+experiment_name: GP_HC_14H
 maximize: True # direction of the optimization
 
 hydra:
     run:
-        dir: ./results/14H/${experiment_name}/
+        dir: ./results/${experiment_name}/
 
 model_cfg:
     _target_: src.test_regression.GPModelPrediction
     feat_cfg:
-        model_config_file: /data/users/zx243/Documents/biotransfer/pretrained_models/bert_configs/config.json
-        feat_path: /data/users/zx243/Documents/biotransfer/pretrained_models/pfam.ckpt # pretrained lanaguge model checkpoint
+        model_config_file: /mnt/jimmyxu/nfs_share2/Documents/biotransfer/pretrained_models/bert_configs/config.json
+        feat_path: /mnt/jimmyxu/nfs_share2/Documents/biotransfer/pretrained_models/pfam.ckpt # pretrained lanaguge model checkpoint
         strict_reload: False
-    pca_model_path: /data/users/zx243/Documents/biotransfer/pca_model.sav # saved pca model for dimensionality reduction
-    gp_state_dict_path: /data/users/zx243/Documents/biotransfer/GP_model_state_dict.pth # pretrained gp model
+    pca_model_path: /mnt/jimmyxu/nfs_share2/Documents/biotransfer/results/train_gp_14H/pca_model.sav # saved pca model for dimensionality reduction
+    gp_state_dict_path: /mnt/jimmyxu/nfs_share2/Documents/biotransfer/results/train_gp_14H/GP_model_state_dict.pth # pretrained gp model
     batch_size: 64
 
 seed_topK: 0 # select the top sequence to initialize the design (seed_topK can be up to 10)
@@ -24,4 +24,4 @@ cdr_region: Null # all variable regions or [0] for cdr1, [1] for cdr 2 and [2] f
 dataloader_cfg:
     _target_: src.datasets.CovidDesignDataset.CovidDataset
     chain: "14H"
-    data_path: /data/users/zx243/Documents/biotransfer/data/covid/ # used to extract top k sequences to be used as seeds and initialize the GP model
+    data_path: /mnt/jimmyxu/nfs_share2/Documents/biotransfer/example_data/covid/ # used to extract top k sequences to be used as seeds and initialize the GP model

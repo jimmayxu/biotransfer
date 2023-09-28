@@ -4,7 +4,7 @@
 experiment_name: "train_gp_14H"
 hydra:
     run:
-        dir: ./results/${experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+        dir: ./results/${experiment_name}
 ############
 
 model_cfg:
