@@ -267,6 +267,7 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
     print('evaluation MAE:', eval_MAE)
     print('evaluation PCC:', eval_PCC)
     print('validation SPEAR:', eval_SPEAR)
-    save_results = {'evaluation_loss': eval_loss, 'evaluation_MAE': eval_MAE, 'evaluation_PCC': eval_PCC, 'validation_loss': val_loss, 'validation_MAE': val_MAE, 'validation_PCC': val_PCC}
+    save_results = {'evaluation_loss': eval_loss, 'evaluation_MAE': eval_MAE, 'evaluation_PCC': eval_PCC, 'evaluation_SPEAR': eval_SPEAR,
+                    'validation_loss': val_loss, 'validation_MAE': val_MAE, 'validation_PCC': val_PCC, 'validation_SPEAR': val_SPEAR}
     pd.Series(save_results).to_csv('performance.csv')
     print('saved performance metrices')

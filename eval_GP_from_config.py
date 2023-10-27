@@ -21,6 +21,6 @@ def eval_from_config(cfg):
     return eval_gp(**cfg)
 
 if __name__ == "__main__":
-    torch.cuda.set_device(1)
+    torch.cuda.set_device(0)
     eval_from_config(cfg)
     #eval_from_config()

@@ -20,7 +20,7 @@ def train_from_config(cfg):
     return train(**cfg)
 
 if __name__ == "__main__":
-    torch.cuda.set_device(0)
+    torch.cuda.set_device(1)
     train_from_config(cfg)
     #train_from_config()
 

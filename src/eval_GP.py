@@ -37,6 +37,7 @@ def evaluation(model, val_dataloader, feat_model, mll, variable_regions=None, pc
                 data, mask, target = batch["input_ids"].cuda(), batch["input_masks"].cuda(), batch["targets"].cuda()
             val_X = feat_model(data, mask, variable_regions=variable_regions)
             if pca_model is not None:
+                val_X = val_X.cpu()
                 val_X = torch.as_tensor(pca_model.transform(val_X.detach()))
                 val_X = val_X.cuda()
             output = model(val_X)
@@ -51,7 +52,7 @@ def evaluation(model, val_dataloader, feat_model, mll, variable_regions=None, pc
     print('Test Pearson: {}'.format(pearsonr(gt, means)[0]))
     return sum(val_loss)/len(val_loss), means, gt
 
-def eval_gp(model_cfg, feat_cfg, train_set_cfg, train_dataloader_cfg, eval_set_cfg, eval_dataloader_cfg, 
+def eval_gp(model_cfg, feat_cfg, train_set_cfg, train_dataloader_cfg, eval_set_cfg, eval_dataloader_cfg,
 val_set_cfg=None, val_dataloader_cfg=None, seed=0, reload_state_dict_path=None, pca_model_path=None,
 strict_reload=True,eval_function_cfg=None,experiment_name=None, nodes=None):
     """
@@ -74,14 +75,14 @@ strict_reload=True,eval_function_cfg=None,experiment_name=None, nodes=None):
         eval_function_cfg: Evaluation function to use
         experiment_name: Name of experiment
         nodes: Number of nodes
-    """ 
+    """
     # Load data handlers
     train_set = hydra.utils.instantiate(train_set_cfg)
     if hasattr(train_set, "collate_fn"):
         train_dataloader = DataLoader(dataset=train_set, collate_fn=train_set.collate_fn, **train_dataloader_cfg)
     else:
         train_dataloader = DataLoader(dataset=train_set, **train_dataloader_cfg)
-    
+
     if val_set_cfg is not None:
         val_set = hydra.utils.instantiate(val_set_cfg)
         if hasattr(val_set, "collate_fn"):
@@ -145,8 +146,9 @@ strict_reload=True,eval_function_cfg=None,experiment_name=None, nodes=None):
     if pca_dim is not None: # perform pca
         print('load pca model')
         pca_model = joblib.load(pca_model_path)
+        train_X = train_X.cpu()
         #pca_model = KernelPCA(pca_dim, kernel='linear', copy_X=False).fit(train_X)
-        train_X = torch.as_tensor(pca_model.transform(train_X.detach()))
+        train_X = torch.as_tensor(pca_model.transform(train_X))
         print(train_X.size())
     else:
         pca_model = None
@@ -178,12 +180,30 @@ strict_reload=True,eval_function_cfg=None,experiment_name=None, nodes=None):
     gp_model.eval()
     likelihood.eval()
     eval_loss, preds, gt = evaluation(gp_model, eval_dataloader, feat_model, mll, variable_regions=variable_regions, pca_model=pca_model)
-    eval_loss, preds, gt = evaluation(gp_model, train_dataloader, feat_model, mll, variable_regions=variable_regions,
-                                      pca_model=pca_model)
     print('validation loss:', eval_loss)
+
+    """
+    import matplotlib.pyplot as plt
+    from sklearn.metrics import r2_score 
+    ax = plt.gca()
+    ax.set_aspect('equal', adjustable='box')
+    ax.plot([0, 7], [0, 7], ls="--", c=".3")
+    
+    plt.scatter(preds, gt, s=5, cmap='Spectral')
+    plt.axis('scaled')
+    plt.xlim(0, 7)
+    plt.ylim(0, 7)
+    
+    plt.xlabel("Predicted Scores")
+    plt.ylabel("Observed Scores")
+    plt.title("Ab-14-H Binding Affinity Scores")
+    plt.show()
+    
+    r2 = r2_score(gt, preds)
+    
+    """
 
     # eval (if evaluation function is provided)
     if eval_function_cfg is not None:
         eval_function = hydra.utils.instantiate(eval_function_cfg)
         eval_function.evaluate(gt, preds)
-    
