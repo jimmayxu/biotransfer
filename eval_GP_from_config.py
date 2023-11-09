@@ -5,7 +5,8 @@
 
 import hydra
 from random import randint
-from src import eval_gp
+#from src import eval_gp
+from scVDG import eval_gp
 import torch
 
 
@@ -21,6 +22,6 @@ def eval_from_config(cfg):
     return eval_gp(**cfg)
 
 if __name__ == "__main__":
-    torch.cuda.set_device(0)
+    torch.cuda.set_device(2)
     eval_from_config(cfg)
     #eval_from_config()

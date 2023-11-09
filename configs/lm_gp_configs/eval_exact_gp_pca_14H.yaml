@@ -44,7 +44,7 @@ eval_set_cfg:
     _target_: src.datasets.CovidDataset
     data_path: /mnt/jimmyxu/nfs_share2/Documents/biotransfer/example_data/covid/
     split: test
-    chain: 14H
+    chain: 95L
     average_replicates: True
     add_static_ends: True
     correction: replicate
