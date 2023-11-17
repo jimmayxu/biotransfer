@@ -26,7 +26,7 @@ if __name__ == '__main__':
     ctype_name = args.ctype_name
     """
     folder_path = 'example_data/scVDG'
-    ctype_name = 'tcr'
+    ctype_name = 'bcr'
     """
 
     cr_table = pd.read_csv(os.path.join(folder_path, 'GSE158055_covid19_BCR_TCR/GSE158055_covid19_%s_vdjnt_pclone.tsv' % ctype_name), sep="\t")
@@ -47,8 +47,7 @@ if __name__ == '__main__':
     clone_freq_corrected = data_prep.corrected_clone_freq(clone_freq, indices, distances)
 
     clone_freq_corrected.index = cellBarcode
-    clone_freq_corrected.reset_index().to_csv(os.path.join(data_prep.save_folder, '%s-clone_freq_corrected.csv' %(ctype_name)))
-
+    clone_freq_corrected.reset_index().to_csv(os.path.join(data_prep.save_folder, '%s-clone_freq_corrected.csv' %(ctype_name)), index_label=False)
 
 
     """
