@@ -1,9 +1,6 @@
 import pandas as pd
 import numpy as np
 import os
-import matplotlib.pyplot as plt
-from sklearn.neighbors import NearestNeighbors
-import fast_matrix_market as fmm
 from pyflann import FLANN
 from scipy import sparse
 import time
@@ -13,35 +10,30 @@ class data_preparation():
     def __init__(self, folder_path='example_data/scVDG', ctype_name='bcr'):
         self.folder_path = folder_path
         self.ctype_name = ctype_name
+        self.save_folder = os.path.join(self.folder_path, 'data_prep')
+        os.makedirs(self.save_folder, exist_ok=True)
 
-        self.cr_table = pd.read_csv(os.path.join(self.folder_path,
-                                        'GSE158055_covid19_BCR_TCR/GSE158055_covid19_%s_vdjnt_pclone.tsv' % self.ctype_name),
-                           sep="\t")
-    def expression_extraction(self, save_file=True):
-        anno = pd.read_csv(os.path.join(self.folder_path, 'GSE158055_cell_annotation.csv'))
-        mtx = fmm.mmread(os.path.join(self.folder_path, 'GSE158055_covid19_counts.mtx'), parallelism=80).T
-
+    def expression_extraction(self, anno, mtx, cellBarcode, save_file=False):
         print('Start tocsr')
         t = time.time()
         mtx = mtx.tocsr()
         print('Time used for tocsr is %.2f min' %((time.time() - t)/60))
 
         # cell preparation
-        cell_index = anno.index[anno.cellName.isin(self.cr_table['cellBarcode'])]
+        cell_index = anno.index[anno.cellName.isin(cellBarcode)]
         t = time.time()
         mtx_ctype = mtx[cell_index]
         print('Time used for %s exp extraction is %.2f min' %(self.ctype_name, (time.time() - t)/60))
 
         if save_file:
             #save csr file
-            sparse.save_npz(os.path.join(self.folder_path, "%s_expression.npz" %self.ctype_name), mtx_ctype)
+            sparse.save_npz(os.path.join(self.save_folder, "%s_expression.npz" %self.ctype_name), mtx_ctype)
 
         return mtx_ctype
 
-    def nearest_neighbour(self, k=100, mtx_ctype=None, save_file=True):
-        os.makedirs(os.path.join(self.folder_path, 'nearest_neighour'), exist_ok = True)
+    def nearest_neighbour(self, k=100, mtx_ctype=None, save_file=False):
         if mtx_ctype is None:
-            mtx_ctype = sparse.load_npz(os.path.join(self.folder_path, "%s_expression.npz" %self.ctype_name))
+            mtx_ctype = sparse.load_npz(os.path.join(self.save_folder, "%s_expression.npz" %self.ctype_name))
 
         mtx = mtx_ctype.log1p()
         mtx_array = mtx.toarray()
@@ -51,29 +43,28 @@ class data_preparation():
         indices, distances = flann.nn(mtx_array, mtx_array, k)
         print('Time used for flann is %.2f min' % ((time.time() - t) / 60))
         if save_file:
-            np.savetxt(os.path.join(self.folder_path, 'nearest_neighour/%s_indices_k%d.txt' %(self.ctype_name, k)), indices)
-            np.savetxt(os.path.join(self.folder_path, 'nearest_neighour/%s_dists_k%d.txt' %(self.ctype_name, k)), distances)
+            os.makedirs(os.path.join(self.save_folder, 'nearest_neighour'), exist_ok=True)
+            np.savetxt(os.path.join(self.save_folder, 'nearest_neighour/%s_indices_k%d.txt' %(self.ctype_name, k)), indices)
+            np.savetxt(os.path.join(self.save_folder, 'nearest_neighour/%s_dists_k%d.txt' %(self.ctype_name, k)), distances)
 
         return indices, distances
 
 
-    def weighted_clone_freq(self, indices, distances):
+    def corrected_clone_freq(self, clone_freq, indices, distances):
 
         distances_ = distances[:, 1:]
         indices_ = indices[:, 1:]
         # distance metric to similarity metric
         similarity = 1. / (distances_ / np.max(distances_))
 
-        similarity_prop = np.true_divide(similarity, similarity.sum(axis=1, keepdims=True))
+        similarity_prop = np.true_divide(similarity, similarity.max())
 
-        clone_freq = self.cr_table['BCR_clone.freq']
         clone_freq_indexed = clone_freq.values[indices_.flatten().astype(int)].reshape(indices_.shape)
 
         rest_contribute = (clone_freq_indexed * similarity_prop).sum(axis=1)
-        clone_freq_weighted = clone_freq + rest_contribute
+        clone_freq_corrected = clone_freq + rest_contribute
 
-        return clone_freq_weighted
-
+        return clone_freq_corrected
 
 
 """
