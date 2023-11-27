@@ -108,7 +108,7 @@ class CovidDataset(Dataset):
             tokenizer = TAPETokenizer(vocab=tokenizer)
         self.tokenizer = tokenizer
 
-        assert chain in ["14H", "14L", "91H", "95L"]
+        #assert chain in ["14H", "14L", "91H", "95L"]
         self.chain = chain
         
         if data_path == None:

@@ -1,7 +1,7 @@
 #defaults:
     #- override hydra/launcher: submitit_slurm
 
-experiment_name: "train_bcrh_cdr3aa"
+experiment_name: "BCRH-P-M004"
 hydra:
     run:
         dir: ./results/${experiment_name}
@@ -19,17 +19,17 @@ feat_cfg:
     feat_path: /mnt/jimmyxu/nfs_share2/Documents/biotransfer/pretrained_models/pfam.ckpt # Full path to the pretrained langauge model checkpoint
     strict_reload: False
     variable_regions: False
-    pca_dim: 1024
+    pca_dim: null
 
 train_set_cfg:
     _target_: src.datasets.CovidDataset
     data_path: /mnt/jimmyxu/nfs_share2/Documents/biotransfer/example_data/covid/
     split: train
-    chain: 14H
-    average_replicates: True
-    add_static_ends: True
+    average_replicates: False
+    chain: BCRH-P-M004
+    add_static_ends: False
     correction: replicate
-    filter_nan: median
+    filter_nan: drop
 
 train_dataloader_cfg:
     batch_size: 32
@@ -40,11 +40,11 @@ eval_set_cfg:
     _target_: src.datasets.CovidDataset
     data_path: /mnt/jimmyxu/nfs_share2/Documents/biotransfer/example_data/covid/
     split: test
-    chain: BCRH_cdr3aa
-    average_replicates: True
-    add_static_ends: True
+    chain: BCRH-P-M004
+    average_replicates: False
+    add_static_ends: False
     correction: replicate
-    filter_nan: median
+    filter_nan: drop
 
 eval_dataloader_cfg:
     batch_size: 32

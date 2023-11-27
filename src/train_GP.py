@@ -186,9 +186,8 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
     """
     print("PCA running \n--- %.3f minutes ---" % ((time.time() - start_time) / 60))
 
-    np.savetxt('data_pca/train_X.txt', train_X.cpu().numpy())
-    np.savetxt('data_pca/train_y.txt', train_y.cpu().numpy())
-
+    #np.savetxt('data_pca/train_X.txt', train_X.cpu().numpy())
+    #np.savetxt('data_pca/train_y.txt', train_y.cpu().numpy())
 
     # load GP model
     target_args = model_cfg._target_.split(".")
@@ -205,6 +204,7 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
         gp_model.cuda()
         likelihood.cuda()
     print(gp_model)
+
 
     # -------TRAIN------
     torch.cuda.empty_cache()
@@ -262,11 +262,11 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
     gp_model.eval()
     likelihood.eval()
     eval_loss, eval_MAE, eval_PCC, eval_SPEAR = validation(gp_model, eval_dataloader, feat_model, mll,
-                                               variable_regions=variable_regions, pca_model=pca_model, save_name='test')
+                                               variable_regions=variable_regions, pca_model=pca_model, save_name=None)
     print('evaluation loss:', eval_loss)
     print('evaluation MAE:', eval_MAE)
     print('evaluation PCC:', eval_PCC)
-    print('validation SPEAR:', eval_SPEAR)
+    print('evaluation SPEAR:', eval_SPEAR)
     save_results = {'evaluation_loss': eval_loss, 'evaluation_MAE': eval_MAE, 'evaluation_PCC': eval_PCC, 'evaluation_SPEAR': eval_SPEAR,
                     'validation_loss': val_loss, 'validation_MAE': val_MAE, 'validation_PCC': val_PCC, 'validation_SPEAR': val_SPEAR}
     pd.Series(save_results).to_csv('performance.csv')
