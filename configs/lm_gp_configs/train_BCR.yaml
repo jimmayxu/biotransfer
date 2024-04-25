@@ -15,20 +15,19 @@ model_cfg:
 
 feat_cfg:
     _target_: src.models.feat_extraction.FeatExtractor
-    model_config_file: /mnt/jimmyxu/nfs_share2/Documents/biotransfer/pretrained_models/bert_configs/config.json
-    feat_path: /mnt/jimmyxu/nfs_share2/Documents/biotransfer/pretrained_models/pfam.ckpt # Full path to the pretrained langauge model checkpoint
+    model_config_file: /ssd/users/zx243/Documents/biotransfer/pretrained_models/bert_configs/config.json
+    feat_path: /ssd/users/zx243/Documents/biotransfer/pretrained_models/pfam.ckpt # Full path to the pretrained langauge model checkpoint
     strict_reload: False
     variable_regions: False
     pca_dim: null
 
 train_set_cfg:
-    _target_: src.datasets.CovidDataset
-    data_path: /mnt/jimmyxu/nfs_share2/Documents/biotransfer/example_data/covid/
+    _target_: src.datasets.BCRDataset
+    data_path: /ssd/users/zx243/Documents/biotransfer/example_data/bcr/
     split: train
     average_replicates: False
-    chain: BCRH-P-M004
+    chain: IGH
     add_static_ends: False
-    correction: replicate
     filter_nan: drop
 
 train_dataloader_cfg:
@@ -37,13 +36,12 @@ train_dataloader_cfg:
 
 
 eval_set_cfg:
-    _target_: src.datasets.CovidDataset
-    data_path: /mnt/jimmyxu/nfs_share2/Documents/biotransfer/example_data/covid/
+    _target_: src.datasets.BCRDataset
+    data_path: /ssd/users/zx243/Documents/biotransfer/example_data/bcr/
     split: test
-    chain: BCRH-P-M004
+    chain: IGH
     average_replicates: False
     add_static_ends: False
-    correction: replicate
     filter_nan: drop
 
 eval_dataloader_cfg:

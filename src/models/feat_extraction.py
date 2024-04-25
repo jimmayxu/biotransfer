@@ -27,8 +27,8 @@ class BertFeatureExtractor(ProteinBertAbstractModel):
         sequence_output, pooled_output = outputs[:2]
         if variable_regions is not None: # extract the variable regions instead of the first token
             pooled_output = sequence_output[:,variable_regions].view(sequence_output.size(0),-1)
-        else:
-            pooled_output = sequence_output.mean(axis=1)
+        # else:
+            # pooled_output = sequence_output.mean(axis=1)
         return pooled_output
 
 class FeatExtractor(LightningModule):

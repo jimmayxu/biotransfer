@@ -18,7 +18,7 @@ dependencies:
   - tqdm
   - pip
   - rapids
-  - gpytorch>=1.5.0
+  - gpytorch>=1.11
   - pip:
     - tape-proteins==0.5
     - gpytorch==1.4.1

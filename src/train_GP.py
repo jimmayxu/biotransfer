@@ -123,6 +123,8 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
         feat_model = module.load_from_checkpoint(feat_cfg.feat_path, model_config_file=feat_cfg.model_config_file,
                                                  strict=feat_cfg.strict_reload,
                                                  map_location=torch.device('cpu'))
+
+
     # pca dimensionality reduction
     pca_dim = feat_cfg.pca_dim
     assert isinstance(pca_dim, int) or (pca_dim is None), 'pca_dim is either None or an positive integer'
@@ -131,8 +133,11 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
         variable_regions = None
     else:
         variable_regions = train_set.get_variable_regions()
-        print('Variable regions:', variable_regions)
+        #print('Variable regions:', variable_regions)
 
+
+    variable_regions = None
+    pca_dim = None
 
 
     # prepare train data
@@ -156,8 +161,8 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
 
     print(train_X.size())
     print(train_y.size())
+
     torch.cuda.empty_cache()
-    start_time = time.time()
     if pca_dim is not None: # perform pca
         if torch.cuda.is_available():
             train_X = train_X.cpu()
@@ -183,11 +188,22 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
         
     else:
         pca_model = None
-    """
+    
     print("PCA running \n--- %.3f minutes ---" % ((time.time() - start_time) / 60))
 
-    #np.savetxt('data_pca/train_X.txt', train_X.cpu().numpy())
-    #np.savetxt('data_pca/train_y.txt', train_y.cpu().numpy())
+    """
+
+    # np.savetxt('data_pca/train_X_pool.txt', train_X.cpu().numpy())
+    # np.savetxt('data_pca/train_y_pool.txt', train_y.cpu().numpy())
+
+    # train_X = np.loadtxt('data_pca/train_X_pool.txt')
+    # train_y = np.loadtxt('data_pca/train_y_pool.txt')
+    # train_X = torch.from_numpy(train_X).float().to(1)
+    # train_y = torch.from_numpy(train_y).float().to(1)
+
+
+    # train_X = train_X[:20000]
+    # train_y = train_y[:20000]
 
     # load GP model
     target_args = model_cfg._target_.split(".")
@@ -196,7 +212,7 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
     module = getattr(import_module(module_path), module_name)
     likelihood = gpytorch.likelihoods.GaussianLikelihood()
     if model_cfg.inducing_points:
-        inducing_points=min([model_cfg.inducing_points, len(train_X)])
+        inducing_points = min([model_cfg.inducing_points, len(train_X)])
         gp_model = module(train_X, train_y, likelihood, inducing_points=inducing_points)
     else:
         gp_model = module(train_X, train_y, likelihood)

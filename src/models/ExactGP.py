@@ -15,7 +15,8 @@ class GPRegressionModel(gpytorch.models.ExactGP):
         """
         super(GPRegressionModel, self).__init__(train_x, train_y, likelihood)
         self.mean_module = gpytorch.means.ConstantMean()
-        self.mean_module.constant.data[:] = train_y.mean().item()
+        #self.mean_module.constant.data[:] = train_y.mean().item()
+        self.mean_module.constant.data = train_y.mean()
             
         self.covar_module = self.base_covar = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=train_x.shape[1]))
         self.covar_module.base_kernel.lengthscale = lengthscale

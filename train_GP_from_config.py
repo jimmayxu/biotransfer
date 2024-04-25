@@ -15,9 +15,9 @@ import os
 import torch
 
 
-config_dir = '/mnt/jimmyxu/nfs_share2/Documents/biotransfer/configs/lm_gp_configs'
+config_dir = '/ssd/users/zx243/Documents/biotransfer/configs/lm_gp_configs'
 hydra.initialize_config_dir(config_dir)
-cfg = hydra.compose("train_BCR_TCR.yaml")
+cfg = hydra.compose("train_exact_gp_pca_14H.yaml")
 
 
 @hydra.main()
