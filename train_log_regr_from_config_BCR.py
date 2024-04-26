@@ -10,7 +10,7 @@ python train_GP_from_config.py -cd configs/lm_gp_configs/ -cn train_exact_gp_pca
 """
 import hydra
 from random import randint
-from src import train_gp
+from src import train_gp, train_log_regr
 import os 
 import torch
 from tqdm import tqdm
@@ -26,7 +26,7 @@ data_directory = '/ssd/users/zx243/Documents/biotransfer/example_data/bcr'
 
 @hydra.main()
 def train_from_config(cfg):
-    return train_gp(**cfg)
+    return train_log_regr(**cfg)
 
 dataDir = '/ssd/users/zx243/CR_HRA001149'
 sampleID = 'HRS267727'
@@ -49,8 +49,22 @@ def data_prepare(dataDir):
     IGH_concat.rename(columns={"IGH": "aa_seq", "clone_freq": "pred_aff"}, inplace=True)
 
     IGH_train, IGH_test = train_test_split(IGH_concat, test_size=0.25)
+
+    if not os.path.exists('example_data/bcr/IGH'):
+        os.mkdir('example_data/bcr/IGH')
     IGH_train.to_csv("example_data/bcr/IGH/IGH_train.csv", index=False)
     IGH_test.to_csv("example_data/bcr/IGH/IGH_test.csv", index=False)
+
+    ## Make subsample and binarise clonal size being =1 and >1
+    IGH_concat_small = IGH_concat.sample(25000)
+    pred_aff = IGH_concat_small.pred_aff
+    pred_aff = pred_aff.where(pred_aff == 1, 0)
+    IGH_concat_small.pred_aff = pred_aff
+
+    IGH_train, IGH_test = train_test_split(IGH_concat_small, test_size=0.25)
+    IGH_train.to_csv("example_data/bcr/IGH_small/IGH_small_train.csv", index=False)
+    IGH_test.to_csv("example_data/bcr/IGH_small/IGH_small_test.csv", index=False)
+
 
 
 if __name__ == "__main__":

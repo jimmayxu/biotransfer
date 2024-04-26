@@ -3,3 +3,4 @@
 
 from .BertForMaskedLanguageModeling import BertForMaskedLanguageModeling
 from .BertForValuePrediction import BertForValuePrediction
+from .LogisticRegression import LogisticRegression

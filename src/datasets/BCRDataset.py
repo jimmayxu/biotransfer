@@ -234,6 +234,7 @@ class BCRDataset(Dataset):
     def get_variable_regions(self):
         """
         NOT FINISHED
+
         Returns list of indices representing the variable regions of the
            dataset chain type.
         """

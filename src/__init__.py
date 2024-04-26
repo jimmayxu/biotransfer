@@ -5,3 +5,4 @@ from .eval import eval
 from .train import train
 from .train_GP import train_gp
 from .eval_GP import eval_gp
+from .train_log_regr import train_log_regr

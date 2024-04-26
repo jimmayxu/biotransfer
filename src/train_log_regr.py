@@ -16,12 +16,13 @@ import joblib
 import time
 import numpy as np
 #from cuml import PCA as cumlPCA
+from sklearn.metrics import classification_report
 
 #from dask_cuda import LocalCUDACluster
 #from dask.distributed import Client
 
 
-def validation(model, val_dataloader, feat_model, mll, variable_regions=None, pca_model=None, save_name=None):
+def validation(model, val_dataloader, feat_model, variable_regions=None, pca_model=None):
     """Evaluate model on validation set
 
     Args:
@@ -35,10 +36,9 @@ def validation(model, val_dataloader, feat_model, mll, variable_regions=None, pc
     Returns
         Average validation loss
     """
-    means = torch.tensor([0.])
-    gt = torch.tensor([0.])
-    Val_X = torch.tensor([])
-    val_loss = []
+    correct = 0
+    targets = torch.tensor([0.])
+    pred = torch.tensor([0.])
     with torch.no_grad():
         for batch in tqdm.tqdm(val_dataloader):
             # extract features
@@ -51,29 +51,19 @@ def validation(model, val_dataloader, feat_model, mll, variable_regions=None, pc
                 val_X = val_X.cpu()
                 val_X = torch.as_tensor(pca_model.transform(val_X.detach()))
                 val_X = val_X.cuda()
-            output = model(val_X)  
-            means = torch.cat([means, output.mean.cpu()])
-            gt = torch.cat([gt, target.squeeze(-1).cpu()])
-            val_loss.append(-mll(output, target.squeeze(-1)))
+            output = model(val_X)
+            _, predicted = torch.max(output.data, 1)
+            correct += (predicted == target.flatten()).sum()
+            pred = torch.cat([pred, predicted.squeeze(-1).cpu()])
+            targets = torch.cat([targets, target.squeeze(-1).cpu()])
 
-            Val_X = torch.cat((Val_X, val_X.cpu()), 0)
-
-    gt = gt[1:]
-    means = means[1:]
-    if save_name is not None:
-        np.savetxt('data_pca/%s_X.txt' % save_name, Val_X)
-        np.savetxt('data_pca/%s_y.txt' % save_name, gt)
-    
-    MAE = torch.mean(torch.abs(means - gt))
-    gt = gt.detach().cpu().numpy()
-    means = means.detach().cpu().numpy()
-    PCC = pearsonr(gt, means)[0]
-    mean_loss = sum(val_loss)/len(val_loss)
-    SPEAR = spearmanr(gt, means)[0]
-    return mean_loss.cpu().numpy().item(), MAE.numpy().item(), PCC, SPEAR
+    accuracy = 100 * (correct.item()) / len(val_dataloader.dataset.data)
+    pred = pred.detach().cpu().numpy()
+    targets = targets.detach().cpu().numpy()
+    return pred, targets, accuracy
 
 
-def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
+def train_log_regr(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
              val_set_cfg=None, val_dataloader_cfg=None, logger_cfgs=None,
              eval_set_cfg=None, eval_dataloader_cfg=None, callback_cfgs=None, checkpoint_callback_cfg=None, seed=0, reload_checkpoint_path=None, reload_state_dict_path=None,
              strict_reload=True,
@@ -101,7 +91,7 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
         experiment_name: Name of this experiment
         nodes: Number of nodes
     """
-    os.makedirs('data_pca', exist_ok=True)
+    os.makedirs(os.path.join('results', experiment_name), exist_ok=True)
 
     # Load training data handlers
     train_set = hydra.utils.instantiate(train_set_cfg)
@@ -193,6 +183,12 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
 
     """
 
+    # np.savetxt('data_pca/train_X_pool.txt', train_X.cpu().numpy())
+    # np.savetxt('data_pca/train_y_pool.txt', train_y.cpu().numpy())
+    # train_X = np.loadtxt('data_pca/train_X_pool.txt')
+    # train_y = np.loadtxt('data_pca/train_y_pool.txt')
+    # train_X = torch.from_numpy(train_X).float().to(1)
+    # train_y = torch.from_numpy(train_y).float().to(1)
 
 
     # load GP model
@@ -200,61 +196,32 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
     module_path = ".".join(target_args[:-1])
     module_name = target_args[-1]
     module = getattr(import_module(module_path), module_name)
-    likelihood = gpytorch.likelihoods.GaussianLikelihood()
-    if model_cfg.inducing_points:
-        inducing_points = min([model_cfg.inducing_points, len(train_X)])
-        gp_model = module(train_X, train_y, likelihood, inducing_points=inducing_points)
-    else:
-        gp_model = module(train_X, train_y, likelihood)
+    n_inputs = train_X.shape[1]  # makes a 1D vector of 784
+    n_outputs = 2
+    log_regr = module(n_inputs, n_outputs)
     if torch.cuda.is_available():
-        gp_model.cuda()
-        likelihood.cuda()
-    print(gp_model)
-
+        log_regr.cuda()
 
     # -------TRAIN------
     torch.cuda.empty_cache()
+    log_regr.train()
 
-    gp_model.train()
-    likelihood.train()
-    optimizer = torch.optim.Adam(gp_model.parameters(), lr=model_cfg.lr)
-    mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, gp_model)
+    # defining the optimizer
+    optimizer = torch.optim.SGD(log_regr.parameters(), lr=model_cfg.lr)
+    # defining Cross-Entropy loss
+    criterion = torch.nn.CrossEntropyLoss()
+
+    train_y = train_y.type(torch.LongTensor).cuda()
+
     epoch_iter = tqdm.tqdm(range(model_cfg.num_epochs))
-    # 21k samples per iteration
     for i in epoch_iter:
-        # Zero backprop gradients
         optimizer.zero_grad()
-        # Get output from model
-        output = gp_model(train_X)
-        # Calc loss and backprop derivatives
-        loss = -mll(output, train_y)
-        
+        outputs = log_regr(train_X)
+        loss = criterion(outputs, train_y)
+        # Loss.append(loss.item())
         loss.backward()
-        #iterator.set_postfix(loss=loss.item())
         optimizer.step()
         epoch_iter.set_postfix(loss=loss.item())
-
-    # save model
-    torch.save(gp_model.state_dict(), 'GP_model_state_dict_pool.pth')
-    if pca_dim is not None:  # pca is used and save the pca model
-        joblib.dump(pca_model, 'pca_model.sav')
-
-    # ------Validation------
-    torch.cuda.empty_cache()
-    # Load validation data handlers
-    val_set = hydra.utils.instantiate(val_set_cfg)
-    if hasattr(val_set, "collate_fn"):
-        val_dataloader = DataLoader(dataset=val_set, collate_fn=val_set.collate_fn, **val_dataloader_cfg)
-    else:
-        val_dataloader = DataLoader(dataset=val_set, **val_dataloader_cfg)
-    gp_model.eval()
-    likelihood.eval()
-    val_loss, val_MAE, val_PCC, val_SPEAR = validation(gp_model, val_dataloader, feat_model, mll,
-                                            variable_regions=variable_regions, pca_model=pca_model, save_name='valid')
-    print('validation loss:', val_loss)
-    print('validation MAE:', val_MAE)
-    print('validation PCC:', val_PCC)
-    print('validation SPEAR:', val_SPEAR)
 
 
     # ------evaluation------
@@ -265,16 +232,12 @@ def train_gp(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
         eval_dataloader = DataLoader(dataset=eval_set, collate_fn=eval_set.collate_fn, **eval_dataloader_cfg)
     else:
         eval_dataloader = DataLoader(dataset=eval_set, **eval_dataloader_cfg)
-    gp_model.eval()
-    likelihood.eval()
-    eval_loss, eval_MAE, eval_PCC, eval_SPEAR = validation(gp_model, eval_dataloader, feat_model, mll,
-                                               variable_regions=variable_regions, pca_model=pca_model, save_name=None)
-    print('evaluation loss:', eval_loss)
-    print('evaluation MAE:', eval_MAE)
-    print('evaluation PCC:', eval_PCC)
-    print('evaluation SPEAR:', eval_SPEAR)
+    log_regr.eval()
+    pred, targets, accuracy = validation(log_regr, eval_dataloader, feat_model,
+                                               variable_regions=variable_regions, pca_model=pca_model)
+    cr = classification_report(targets, pred, target_names=["more than one clone", "one clone only"])
+    print(cr)
+    print('evaluation accuracy: %.2f%%' %accuracy)
+    save_results = pd.DataFrame.from_dict({"targets": targets, "pred": pred})
 
-    save_results = {'evaluation_loss': eval_loss, 'evaluation_MAE': eval_MAE, 'evaluation_PCC': eval_PCC, 'evaluation_SPEAR': eval_SPEAR,
-                   'validation_loss': val_loss, 'validation_MAE': val_MAE, 'validation_PCC': val_PCC, 'validation_SPEAR': val_SPEAR}
-    pd.Series(save_results).to_csv('performance_pool.csv')
-    print('saved performance metrices')
+    save_results.to_csv(os.path.join('results', experiment_name, 'pred_results.csv'))
