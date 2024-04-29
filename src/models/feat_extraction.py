@@ -6,6 +6,7 @@ import torch
 from tape.models.modeling_utils import ProteinConfig
 from tape.models.modeling_bert import ProteinBertAbstractModel, ProteinBertModel
 from importlib import import_module
+import numpy as np
 
 def load_featmodel_from_checkpoint(model_config_file,feat_path,strict_reload=False):
     #module = getattr(import_module("src.models.feat_extraction"), "FeatExtractor")
@@ -22,14 +23,23 @@ class BertFeatureExtractor(ProteinBertAbstractModel):
         self.bert = ProteinBertModel(config)
         self.hidden_size_bert = config.hidden_size
 
-    def forward(self, input_ids, input_mask=None, variable_regions=None,targets=None):
+
+    def forward(self, input_ids, variable_regions, input_mask=None, targets=None):
         outputs = self.bert(input_ids, input_mask=input_mask)
         sequence_output, pooled_output = outputs[:2]
-        if variable_regions is not None: # extract the variable regions instead of the first token
-            pooled_output = sequence_output[:,variable_regions].view(sequence_output.size(0),-1)
-        # else:
-            # pooled_output = sequence_output.mean(axis=1)
-        return pooled_output
+        if None not in variable_regions: # extract the variable regions instead of the first token
+            Output = torch.empty(pooled_output.shape)
+            for i, vr in enumerate(variable_regions):
+                vr_ = [x for x in vr if not np.isnan(x)]
+                Output[i] = sequence_output[i, vr_, :].mean(0)
+        else:
+             Output = pooled_output
+
+        if torch.cuda.is_available():
+            Output = Output.cuda()
+
+        return Output
+
 
 class FeatExtractor(LightningModule):
     """BertFeatureExtractor as lightning model"""

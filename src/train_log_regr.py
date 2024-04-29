@@ -16,13 +16,12 @@ import joblib
 import time
 import numpy as np
 #from cuml import PCA as cumlPCA
-from sklearn.metrics import classification_report
 
 #from dask_cuda import LocalCUDACluster
 #from dask.distributed import Client
 
 
-def validation(model, val_dataloader, feat_model, variable_regions=None, pca_model=None):
+def evaluation(model, eval_dataloader, feat_model, pca_model=None):
     """Evaluate model on validation set
 
     Args:
@@ -38,29 +37,31 @@ def validation(model, val_dataloader, feat_model, variable_regions=None, pca_mod
     """
     correct = 0
     targets = torch.tensor([0.])
-    pred = torch.tensor([0.])
+    pred_prob = torch.tensor([0.])
     with torch.no_grad():
-        for batch in tqdm.tqdm(val_dataloader):
+        for batch in tqdm.tqdm(eval_dataloader):
             # extract features
             if torch.cuda.is_available():
-                data, mask, target = batch["input_ids"].cuda(), batch["input_masks"].cuda(), batch["targets"].cuda()
+                data, mask, target, variable_regions = batch["input_ids"].cuda(), batch["input_masks"].cuda(), batch["targets"].cuda(), batch["input_region"]
             else:
-                data, mask, target = batch["input_ids"], batch["input_masks"], batch["targets"]
-            val_X = feat_model(data, mask, variable_regions=variable_regions)
+                data, mask, target, variable_regions = batch["input_ids"], batch["input_masks"], batch["targets"], batch["input_region"]
+            eval_X = feat_model(data, mask, variable_regions=variable_regions)
             if pca_model is not None:
-                val_X = val_X.cpu()
-                val_X = torch.as_tensor(pca_model.transform(val_X.detach()))
-                val_X = val_X.cuda()
-            output = model(val_X)
+                eval_X = eval_X.cpu()
+                eval_X = torch.as_tensor(pca_model.transform(eval_X.detach()))
+                eval_X = eval_X.cuda()
+            output = model(eval_X)
+
             _, predicted = torch.max(output.data, 1)
             correct += (predicted == target.flatten()).sum()
-            pred = torch.cat([pred, predicted.squeeze(-1).cpu()])
+
+            pred_prob = torch.cat([pred_prob, output[:, 1].cpu()])
             targets = torch.cat([targets, target.squeeze(-1).cpu()])
 
-    accuracy = 100 * (correct.item()) / len(val_dataloader.dataset.data)
-    pred = pred.detach().cpu().numpy()
+    accuracy = (correct.item()) / len(eval_dataloader.dataset.data)
+    pred_prob = pred_prob.detach().cpu().numpy()
     targets = targets.detach().cpu().numpy()
-    return pred, targets, accuracy
+    return pred_prob, targets, accuracy
 
 
 def train_log_regr(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
@@ -95,6 +96,14 @@ def train_log_regr(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None
 
     # Load training data handlers
     train_set = hydra.utils.instantiate(train_set_cfg)
+
+    if train_set.variable_regions:
+        name = 'vr_mean'
+    else:
+        name = 'pool'
+    print(name)
+
+
     print("TRAIN SET SIZE: {}".format(len(train_set)))
     if hasattr(train_set, "collate_fn"):
         train_dataloader = DataLoader(dataset=train_set, collate_fn=train_set.collate_fn, **train_dataloader_cfg)
@@ -115,19 +124,12 @@ def train_log_regr(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None
                                                  map_location=torch.device('cpu'))
 
 
+
+
     # pca dimensionality reduction
     pca_dim = feat_cfg.pca_dim
     assert isinstance(pca_dim, int) or (pca_dim is None), 'pca_dim is either None or an positive integer'
-    # extract variable_regions indices if variable_regions=True
-    if not feat_cfg.variable_regions:
-        variable_regions = None
-    else:
-        variable_regions = train_set.get_variable_regions()
-        #print('Variable regions:', variable_regions)
 
-
-    variable_regions = None
-    pca_dim = None
 
 
     # prepare train data
@@ -141,9 +143,11 @@ def train_log_regr(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None
     with torch.no_grad():
         for batch in tqdm.tqdm(train_dataloader):
             if torch.cuda.is_available():
-                data, mask, target = batch["input_ids"].cuda(), batch["input_masks"].cuda(), batch["targets"].cuda()
+                data, mask, target, variable_regions = batch["input_ids"].cuda(), batch["input_masks"].cuda(), batch["targets"].cuda(), batch["input_region"]
             else:
-                data, mask, target = batch["input_ids"], batch["input_masks"], batch["targets"]
+                data, mask, target, variable_regions = batch["input_ids"], batch["input_masks"], batch["targets"], batch["input_region"]
+
+
             train_y = torch.cat((train_y, target.squeeze(-1)), 0)
             output = feat_model(data, mask, variable_regions=variable_regions)
             train_X = torch.cat((train_X, output), 0)
@@ -185,13 +189,14 @@ def train_log_regr(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None
 
     # np.savetxt('data_pca/train_X_pool.txt', train_X.cpu().numpy())
     # np.savetxt('data_pca/train_y_pool.txt', train_y.cpu().numpy())
-    # train_X = np.loadtxt('data_pca/train_X_pool.txt')
-    # train_y = np.loadtxt('data_pca/train_y_pool.txt')
-    # train_X = torch.from_numpy(train_X).float().to(1)
-    # train_y = torch.from_numpy(train_y).float().to(1)
+    # train_X = np.loadtxt(os.path.join('results', experiment_name, 'train_X_pool.txt'))
+    # train_y = np.loadtxt(os.path.join('results', experiment_name, 'train_y_pool.txt'))
+    # train_X = torch.from_numpy(train_X).float().cuda()
+    # train_y = torch.from_numpy(train_y).float().cuda()
+    #train_X_ = train_X[:20000]
+    #train_y_ = train_y[:20000]
 
-
-    # load GP model
+    # load logistic regression model
     target_args = model_cfg._target_.split(".")
     module_path = ".".join(target_args[:-1])
     module_name = target_args[-1]
@@ -225,6 +230,10 @@ def train_log_regr(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None
 
 
     # ------evaluation------
+    from sklearn.metrics import roc_auc_score, average_precision_score
+    from sklearn.metrics import classification_report
+    import matplotlib.pyplot as plt
+
     torch.cuda.empty_cache()
     # Load evaluation data handlers
     eval_set = hydra.utils.instantiate(eval_set_cfg)
@@ -232,12 +241,34 @@ def train_log_regr(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None
         eval_dataloader = DataLoader(dataset=eval_set, collate_fn=eval_set.collate_fn, **eval_dataloader_cfg)
     else:
         eval_dataloader = DataLoader(dataset=eval_set, **eval_dataloader_cfg)
-    log_regr.eval()
-    pred, targets, accuracy = validation(log_regr, eval_dataloader, feat_model,
-                                               variable_regions=variable_regions, pca_model=pca_model)
-    cr = classification_report(targets, pred, target_names=["more than one clone", "one clone only"])
-    print(cr)
-    print('evaluation accuracy: %.2f%%' %accuracy)
-    save_results = pd.DataFrame.from_dict({"targets": targets, "pred": pred})
 
-    save_results.to_csv(os.path.join('results', experiment_name, 'pred_results.csv'))
+    log_regr.eval()
+    pred_prob, targets, accuracy = evaluation(log_regr, eval_dataloader, feat_model, pca_model=pca_model)
+
+    cr = classification_report(targets, pred_prob > 0.5, target_names=["more than one clone", "one clone only"])
+    print(cr)
+
+
+
+    auroc = roc_auc_score(targets, pred_prob)
+    aupr = average_precision_score(targets, pred_prob)
+    """
+    from sklearn.metrics import precision_recall_curve
+    precision, recall, thresholds = precision_recall_curve(targets, pred_prob)
+
+    fig, ax = plt.subplots()
+    ax.plot(recall, precision, color='purple')
+
+    # add axis labels to plot
+    ax.set_title('Precision-Recall Curve')
+    ax.set_ylabel('Precision')
+    ax.set_xlabel('Recall')
+    # display plot
+    plt.show()
+    """
+
+
+    print('evaluation accuracy: %.2f, evaluation auroc: %.2f, evaluation aupr: %.2f' %(accuracy, auroc, aupr))
+
+    save_results = pd.DataFrame.from_dict({"targets": targets, "pred_prob": pred_prob})
+    save_results.to_csv(os.path.join('results', experiment_name, 'pred_results_%s.csv' %name))

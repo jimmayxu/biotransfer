@@ -19,7 +19,8 @@ from sklearn.model_selection import train_test_split
 
 config_dir = '/ssd/users/zx243/Documents/biotransfer/configs/lm_gp_configs'
 hydra.initialize_config_dir(config_dir)
-cfg = hydra.compose("train_BCR.yaml")
+# cfg = hydra.compose("train_BCR_IGH.yaml")
+cfg = hydra.compose("train_BCR_IGH_small.yaml")
 
 data_directory = '/ssd/users/zx243/Documents/biotransfer/example_data/bcr'
 
@@ -28,8 +29,8 @@ data_directory = '/ssd/users/zx243/Documents/biotransfer/example_data/bcr'
 def train_from_config(cfg):
     return train_log_regr(**cfg)
 
-dataDir = '/ssd/users/zx243/CR_HRA001149'
-sampleID = 'HRS267727'
+
+# sampleID = 'HRS267727'
 def data_prepare(dataDir):
     sampleIDs = os.listdir(dataDir)
     IGH_concat = pd.DataFrame()
@@ -68,8 +69,8 @@ def data_prepare(dataDir):
 
 
 if __name__ == "__main__":
-
-
+    # dataDir = '/ssd/users/zx243/CR_HRA001149'
+    # data_prepare(dataDir)
     torch.cuda.set_device(1)
     train_from_config(cfg)
     #train_from_config()

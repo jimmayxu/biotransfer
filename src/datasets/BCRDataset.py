@@ -35,6 +35,7 @@ class BCRDataset(Dataset):
                  average_replicates: bool = False,
                  add_static_ends: bool = False,
                  remove_static: bool = False,
+                 variable_regions: bool = False,
                  filter_nan: str = "drop",
                  correction: str = "assay",
                  collate_type: str = "batch_padded",
@@ -69,17 +70,18 @@ class BCRDataset(Dataset):
 
         #assert chain in ["IGH"]
         self.chain = chain
-        
+        self.variable_regions = variable_regions
+
         if data_path == None:
             return
 
         if split not in ('train', 'valid', 'test'):
             raise ValueError(f"Unrecognized split: {split}. "
-                             f"Must be one of ['train', 'valid', 'test']")  
+                             f"Must be one of ['train', 'valid', 'test']")
 
         if add_static_ends and remove_static:
             raise Exception("Cannot add static ends and remove static at the same time. Only one of these options should be True.")
-        
+
 
         self.split = split
         self.average_replicates = average_replicates
@@ -99,8 +101,8 @@ class BCRDataset(Dataset):
             data_.append(pd.read_csv(data_file))
             data_file = self.data_path + '{}/{}_{}.csv'.format(chain, chain, 'test')
             data_.append(pd.read_csv(data_file))
-            data_all = pd.concat(data_) 
-            
+            data_all = pd.concat(data_)
+
             #target_scaler = StandardScaler()
             #target_scaler.fit(np.array([list(data_all["pred_aff"])]).T)  
 
@@ -150,10 +152,7 @@ class BCRDataset(Dataset):
 
         # Only use sequence and label
         #data['pred_aff'] = target_scaler.transform(np.array([list(data['pred_aff'])]).T).T[0]
-        data = data.to_dict('records')
-
-        #self.backbone_static_regions = data[['fwr1', 'fwr2', 'fwr3', 'fwr4']].values.tolist()
-        #self.backbone_variable_regions = data[['cdr1', 'cdr2', 'cdr3']].values.tolist()
+        self.region = data.loc[:, ['fwr1', 'cdr1', 'fwr2', 'cdr2', 'fwr3', 'cdr3', 'fwr4']]
 
 
         # If batch_padded, pads each sample to max length in current batch
@@ -161,13 +160,13 @@ class BCRDataset(Dataset):
         assert collate_type in ["batch_padded", "full_padded"]
         self.collate_type = collate_type
 
-        if token_encode_type == "one_hot":
-            self.variable_regions = self.get_variable_regions()
         self.token_encode_type = token_encode_type
         self.pca_model = None
 
-        self.data = data
+        self.data = data.to_dict('records')
 
+        if self.variable_regions:
+            self.regions = self.get_variable_regions()
 
 
     def __len__(self) -> int:
@@ -192,7 +191,14 @@ class BCRDataset(Dataset):
         else:
             input_label = None
 
-        return token_ids, input_mask, input_label
+        if self.variable_regions:
+            input_region = self.regions[index]
+        else:
+            input_region = None
+        return token_ids, input_mask, input_label, input_region
+
+
+
 
     def collate_fn(self, batch: List[Tuple[Any, ...]]) -> Dict[str, torch.Tensor]:
         """Turns list of samples into batch that can be fed to a model
@@ -203,7 +209,7 @@ class BCRDataset(Dataset):
         Returns:
             A batch corresponding to the given list of samples
         """
-        input_ids, input_masks, stability_true_value = tuple(zip(*batch))
+        input_ids, input_masks, stability_true_value, input_region = tuple(zip(*batch))
         if self.collate_type == "batch_padded":
             input_ids = torch.from_numpy(pad_sequences(input_ids, 0))
             input_masks = torch.from_numpy(pad_sequences(input_masks, 0))
@@ -225,11 +231,15 @@ class BCRDataset(Dataset):
             input_ids = input_ids.permute(0, 2, 1)
             input_ids = input_ids.type(torch.float32)
 
-        stability_true_value = torch.FloatTensor(stability_true_value)  # type: ignore
+        stability_true_value = torch.FloatTensor(stability_true_value)
         stability_true_value = stability_true_value.unsqueeze(1)
+
+
+
         return {'input_ids': input_ids,
                 'input_masks': input_masks,
-                'targets': stability_true_value}
+                'targets': stability_true_value,
+                "input_region": list(input_region)}
 
     def get_variable_regions(self):
         """
@@ -238,11 +248,12 @@ class BCRDataset(Dataset):
         Returns list of indices representing the variable regions of the
            dataset chain type.
         """
-        Var = self.backbone_variable_regions
-        Variable_regions = []
-        for var in Var:
+        Variable_regions = list()
+        for _, r in self.region.iterrows():
+            var = [(r['fwr1'], r['cdr1']), (r['fwr2'], r['cdr2']), (r['fwr3'], r['cdr3'])]
             variable_regions = list(itertools.chain(*[list(range(i,j)) for i,j in var]))
-            variable_regions = [i+1 for i in variable_regions] # plus 1 to offset the beginning token
-            Variable_regions += variable_regions
-        return variable_regions
+            Variable_regions.append(variable_regions)
+
+
+        return pd.DataFrame(Variable_regions).values.tolist()
 

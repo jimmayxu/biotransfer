@@ -1,0 +1,50 @@
+#defaults:
+    #- override hydra/launcher: submitit_slurm
+
+experiment_name: "BCR_IGH"
+hydra:
+    run:
+        dir: ./results/${experiment_name}
+############
+
+model_cfg:
+    _target_: src.models.LogisticRegression.LogisticRegression
+    lr: 0.001
+    num_epochs: 1000
+
+feat_cfg:
+    _target_: src.models.feat_extraction.FeatExtractor
+    model_config_file: /ssd/users/zx243/Documents/biotransfer/pretrained_models/bert_configs/config.json
+    feat_path: /ssd/users/zx243/Documents/biotransfer/pretrained_models/pfam.ckpt # Full path to the pretrained langauge model checkpoint
+    strict_reload: False
+    pca_dim: null
+    variable_regions: False
+
+train_set_cfg:
+    _target_: src.datasets.BCRDataset
+    data_path: /ssd/users/zx243/Documents/biotransfer/example_data/bcr/
+    split: train
+    average_replicates: False
+    chain: IGH
+    add_static_ends: False
+    filter_nan: drop
+    variable_regions: False
+
+train_dataloader_cfg:
+    batch_size: 32
+    shuffle: True
+
+
+eval_set_cfg:
+    _target_: src.datasets.BCRDataset
+    data_path: /ssd/users/zx243/Documents/biotransfer/example_data/bcr/
+    split: test
+    chain: IGH
+    average_replicates: False
+    add_static_ends: False
+    filter_nan: drop
+
+eval_dataloader_cfg:
+    batch_size: 32
+    shuffle: True
+
