@@ -35,7 +35,6 @@ def evaluation(model, eval_dataloader, feat_model, pca_model=None):
     Returns
         Average validation loss
     """
-    correct = 0
     targets = torch.tensor([0.])
     pred_prob = torch.tensor([0.])
     with torch.no_grad():
@@ -52,16 +51,13 @@ def evaluation(model, eval_dataloader, feat_model, pca_model=None):
                 eval_X = eval_X.cuda()
             output = model(eval_X)
 
-            _, predicted = torch.max(output.data, 1)
-            correct += (predicted == target.flatten()).sum()
-
             pred_prob = torch.cat([pred_prob, output[:, 1].cpu()])
             targets = torch.cat([targets, target.squeeze(-1).cpu()])
 
-    accuracy = (correct.item()) / len(eval_dataloader.dataset.data)
     pred_prob = pred_prob.detach().cpu().numpy()
+
     targets = targets.detach().cpu().numpy()
-    return pred_prob, targets, accuracy
+    return pred_prob, targets
 
 
 def train_log_regr(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None,
@@ -125,7 +121,6 @@ def train_log_regr(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None
 
 
 
-
     # pca dimensionality reduction
     pca_dim = feat_cfg.pca_dim
     assert isinstance(pca_dim, int) or (pca_dim is None), 'pca_dim is either None or an positive integer'
@@ -155,6 +150,9 @@ def train_log_regr(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None
 
     print(train_X.size())
     print(train_y.size())
+
+
+
 
     torch.cuda.empty_cache()
     if pca_dim is not None: # perform pca
@@ -192,7 +190,7 @@ def train_log_regr(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None
     # train_X = np.loadtxt(os.path.join('results', experiment_name, 'train_X_pool.txt'))
     # train_y = np.loadtxt(os.path.join('results', experiment_name, 'train_y_pool.txt'))
     # train_X = torch.from_numpy(train_X).float().cuda()
-    # train_y = torch.from_numpy(train_y).float().cuda()
+    # train_y = torch.from_numpy(train_y).float().to(1)
     #train_X_ = train_X[:20000]
     #train_y_ = train_y[:20000]
 
@@ -201,9 +199,12 @@ def train_log_regr(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None
     module_path = ".".join(target_args[:-1])
     module_name = target_args[-1]
     module = getattr(import_module(module_path), module_name)
+
+
+
     n_inputs = train_X.shape[1]  # makes a 1D vector of 784
     n_outputs = 2
-    log_regr = module(n_inputs, n_outputs)
+    log_regr = module(n_inputs, n_outputs, model_cfg.bias)
     if torch.cuda.is_available():
         log_regr.cuda()
 
@@ -217,9 +218,13 @@ def train_log_regr(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None
     criterion = torch.nn.CrossEntropyLoss()
 
     train_y = train_y.type(torch.LongTensor).cuda()
-
+    #batch_size = 500
     epoch_iter = tqdm.tqdm(range(model_cfg.num_epochs))
     for i in epoch_iter:
+        #idx = np.random.randint(0, train_X.shape[0], batch_size)
+        #x_batch = train_X[idx, :]
+        #y_batch = train_y[idx]
+
         optimizer.zero_grad()
         outputs = log_regr(train_X)
         loss = criterion(outputs, train_y)
@@ -230,9 +235,6 @@ def train_log_regr(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None
 
 
     # ------evaluation------
-    from sklearn.metrics import roc_auc_score, average_precision_score
-    from sklearn.metrics import classification_report
-    import matplotlib.pyplot as plt
 
     torch.cuda.empty_cache()
     # Load evaluation data handlers
@@ -243,17 +245,15 @@ def train_log_regr(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None
         eval_dataloader = DataLoader(dataset=eval_set, **eval_dataloader_cfg)
 
     log_regr.eval()
-    pred_prob, targets, accuracy = evaluation(log_regr, eval_dataloader, feat_model, pca_model=pca_model)
-
-    cr = classification_report(targets, pred_prob > 0.5, target_names=["more than one clone", "one clone only"])
-    print(cr)
+    pred_prob, targets = evaluation(log_regr, eval_dataloader, feat_model, pca_model=pca_model)
 
 
 
-    auroc = roc_auc_score(targets, pred_prob)
-    aupr = average_precision_score(targets, pred_prob)
     """
-    from sklearn.metrics import precision_recall_curve
+    from sklearn.metrics import precision_recall_curve, roc_curve
+    fpr, tpr, thresholds = precision_recall_curve(targets, pred_prob)
+    plt.scatter(fpr, tpr)
+    plt.show()
     precision, recall, thresholds = precision_recall_curve(targets, pred_prob)
 
     fig, ax = plt.subplots()
@@ -268,7 +268,7 @@ def train_log_regr(train_set_cfg, train_dataloader_cfg, feat_cfg, model_cfg=None
     """
 
 
-    print('evaluation accuracy: %.2f, evaluation auroc: %.2f, evaluation aupr: %.2f' %(accuracy, auroc, aupr))
-
     save_results = pd.DataFrame.from_dict({"targets": targets, "pred_prob": pred_prob})
     save_results.to_csv(os.path.join('results', experiment_name, 'pred_results_%s.csv' %name))
+
+    return pred_prob, targets, train_X

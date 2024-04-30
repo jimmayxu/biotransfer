@@ -11,6 +11,7 @@ model_cfg:
     _target_: src.models.LogisticRegression.LogisticRegression
     lr: 0.001
     num_epochs: 1000
+    bias: True
 
 feat_cfg:
     _target_: src.models.feat_extraction.FeatExtractor
@@ -27,7 +28,7 @@ train_set_cfg:
     chain: IGH_small
     add_static_ends: False
     filter_nan: drop
-    variable_regions: False
+    variable_regions: True
 
 train_dataloader_cfg:
     batch_size: 32
@@ -42,7 +43,7 @@ eval_set_cfg:
     average_replicates: False
     add_static_ends: False
     filter_nan: drop
-    variable_regions: False
+    variable_regions: True
 
 eval_dataloader_cfg:
     batch_size: 32
