@@ -104,7 +104,7 @@ def UMAP_demo(output):
 if __name__ == "__main__":
 
     dataDir = '/ssd/users/zx243/CR_HRA001149'
-    # data_prepare(dataDir, True)
+    # data_prepare(dataDir, is_small=True)
     torch.cuda.set_device(1)
     cfg = hydra.compose("train_BCR_IGH_small.yaml")
 
